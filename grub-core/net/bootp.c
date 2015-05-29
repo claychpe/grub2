@@ -517,133 +517,77 @@ get_dhcpv6_dns_address (const struct grub_net_dhcpv6_packet *packet, grub_size_t
     }
 }
 
-static void
+static grub_err_t 
 find_dhcpv6_bootfile_url (const struct grub_net_dhcpv6_packet *packet, grub_size_t size,
 	char **proto, char **server_ip, char **boot_file)
 {
-  char *bootfile_url;
-  const struct grub_dhcpv6_option* opt_url;
-  char *ip_start, *ip_end;
-  char *path;
-  grub_size_t ip_len;
-  grub_uint16_t len;
+  const struct grub_dhcpv6_option* opt;
+  grub_uint16_t scheme_len, host_len, len;
+  const char *scheme, *host, *path;
   const char *protos[] = {"tftp://", "http://", NULL};
-  const char *pr;
-  int i;
+  const char **pr;
 
-  if (proto)
-    *proto = NULL;
+  opt = find_dhcpv6_option_in_packet (packet, size, GRUB_DHCPv6_OPTION_BOOTFILE_URL);
 
-  if (server_ip)
-    *server_ip = NULL;
+  if (!opt)
+    return grub_errno;;
 
-  if (boot_file)
-    *boot_file = NULL;
+  len = grub_be_to_cpu16 (opt->len);
+  scheme = (const char *)opt->data;
 
-  opt_url = find_dhcpv6_option_in_packet (packet, size, GRUB_DHCPv6_OPTION_BOOTFILE_URL);
-
-  if (!opt_url)
-    return;
-
-  len = grub_be_to_cpu16 (opt_url->len);
-
-  bootfile_url = grub_malloc (len + 1);
-
-  if (!bootfile_url)
-    return;
-
-  grub_memcpy (bootfile_url, opt_url->data, len);
-  bootfile_url[len]   = '\0';
-
-  for (i = 0; (pr = *(protos + i)); ++i)
-      if (grub_strncmp (bootfile_url, pr, grub_strlen(pr)) == 0)
-	break;
-
-  if (!pr)
+  for (pr = protos; *pr; pr++)
     {
-      grub_error (GRUB_ERR_IO,
-	N_("unsupported protocol, only tftp and http are supported"));
-      goto cleanup;
+      scheme_len = grub_strlen(*pr);
+
+      if (len < scheme_len)
+	continue;
+
+      if (grub_memcmp (scheme, *pr, scheme_len) == 0)
+	{
+	  len -= scheme_len;
+	  host = scheme + scheme_len; 
+	  break;
+	}
     }
 
-  ip_start = ip_end = NULL;
-  ip_start = bootfile_url + grub_strlen(pr);
+  if (!*pr)
+    return grub_error (GRUB_ERR_IO, N_("unsupported protcol or invalid url fomat"));
 
-  /* Follow elilo and edk2 that check for starting and ending delimiter '[..]'
-     in which IPv6 server address is enclosed. */
-  if (*ip_start != '[')
-    ip_start = NULL;
-  else
-    ip_end = grub_strchr (++ip_start, ']');
+  for (path = host; len > 0 && *path != '/'; --len, ++path);
 
-  if (!ip_start || !ip_end)
-    {
-      grub_error (GRUB_ERR_IO, N_("IPv6-address not in square brackets"));
-      goto cleanup;
-    }
-
-  ip_len = ip_end - ip_start;
+  if (!len)
+    return grub_error (GRUB_ERR_IO, N_("invalid url format"));
+      
+  host_len = path - host;
 
   if (proto)
     {
-      grub_size_t proto_len  = grub_strlen (pr) - 3;
-
-      *proto = grub_malloc (proto_len + 1);
-      if (!*proto)
-	goto cleanup;
-
-      grub_memcpy (*proto, pr, proto_len);
-      *(*proto + proto_len)  = '\0';
+      *proto = grub_zalloc (scheme_len - 2);
+      grub_memcpy (*proto, scheme, scheme_len - 3);
     }
 
   if (server_ip)
     {
-      *server_ip = grub_malloc (ip_len + 1);
-
-      if (!*server_ip)
-	goto cleanup;
-
-      grub_memcpy (*server_ip, ip_start, ip_len);
-      *(*server_ip + ip_len) = '\0';
+      if (host_len > 2 && (host[0] == '[' && host[host_len - 1] == ']'))
+	{
+	  *server_ip = grub_zalloc (host_len - 1);
+	  grub_memcpy (*server_ip, host + 1, host_len - 2);
+	}
+      else
+	{
+	  *server_ip = grub_zalloc (host_len + 1);
+	  grub_memcpy (*server_ip, host, host_len);
+	}
     }
-
-  path = ip_end + 1;
 
   if (boot_file)
     {
-      *boot_file = grub_strdup (path);
-
-      if (!*boot_file)
-	goto cleanup;
+      *boot_file = grub_zalloc (len + 1);
+      grub_memcpy (*boot_file, path, len);
     }
 
-cleanup:
-
-  if (bootfile_url)
-    grub_free (bootfile_url);
-
-  if (grub_errno)
-    {
-      if (proto && *proto)
-	{
-	  grub_free (*proto);
-	  *proto = NULL;
-	}
-
-      if (server_ip && *server_ip)
-	{
-	  grub_free (*server_ip);
-	  *server_ip = NULL;
-	}
-
-      if (boot_file && *boot_file)
-	{
-	  grub_free (*boot_file);
-	  *boot_file = NULL;
-	}
-    }
+  return GRUB_ERR_NONE;
 }
-
 
 static grub_err_t
 grub_net_configure_by_dhcpv6_adv (const struct grub_net_dhcpv6_packet *v6_adv,
@@ -852,6 +796,7 @@ grub_net_configure_by_dhcpv6_reply (const char *name,
       grub_free (dns);
     }
 
+  proto = server_ip = boot_file = NULL;
   find_dhcpv6_bootfile_url (v6, size, &proto, &server_ip, &boot_file);
 
   if (grub_errno)

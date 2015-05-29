@@ -268,7 +268,11 @@ handle_dgram (struct grub_net_buff *nb,
 	    grub_netbuff_free (nb);
 	    return err;
 	  }
-	grub_net_process_dhcp6 (nb, card);
+
+	err = grub_net_process_dhcp6 (nb, card);
+	if (err)
+	  grub_print_error ();
+
 	grub_netbuff_free (nb);
 	return GRUB_ERR_NONE;
       }

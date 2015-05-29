@@ -490,7 +490,7 @@ void
 grub_net_process_dhcp (struct grub_net_buff *nb,
 		       struct grub_net_card *card);
 
-void
+grub_err_t
 grub_net_process_dhcp6 (struct grub_net_buff *nb,
 			struct grub_net_card *card);
 

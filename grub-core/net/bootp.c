@@ -296,10 +296,12 @@ struct grub_DUID_LL
   grub_uint8_t hwaddr[6];
 } GRUB_PACKED;
 
+#define GRUB_DHCPv6_SOLICIT 1
 #define GRUB_DHCPv6_ADVERTISE 2
 #define GRUB_DHCPv6_REQUEST 3
 #define GRUB_DHCPv6_REPLY 7
 
+/* FIXME: enum please. These can also be anonymous, no need to invent fancy names. ??*/
 #define GRUB_DHCPv6_OPTION_CLIENTID 1
 #define GRUB_DHCPv6_OPTION_SERVERID 2
 #define GRUB_DHCPv6_OPTION_IA_NA 3
@@ -320,6 +322,7 @@ struct grub_dhcpv6_session
   grub_uint32_t iaid;
   grub_uint32_t transaction_id:24;
   grub_uint64_t start_time;
+  struct grub_DUID_LL duid;
   struct grub_net_network_level_interface *iface;
 };
 
@@ -327,7 +330,9 @@ static struct grub_dhcpv6_session *grub_dhcpv6_sessions = NULL;
 #define FOR_DHCPV6_SESSIONS(var) FOR_LIST_ELEMENTS (var, grub_dhcpv6_sessions)
 
 static void
-grub_dhcpv6_session_add (struct grub_dhcpv6_session *session)
+grub_dhcpv6_session_add (struct grub_dhcpv6_session *session,
+    struct grub_net_network_level_interface *iface,
+    grub_uint32_t iaid)
 {
   struct grub_datetime date;
   grub_err_t err;
@@ -340,11 +345,16 @@ grub_dhcpv6_session_add (struct grub_dhcpv6_session *session)
       t = 0;
     }
 
+  session->iface = iface;
+  session->iaid = iaid;
   session->transaction_id = t;
   session->start_time = grub_get_time_ms ();
-  grub_list_push (GRUB_AS_LIST_P (&grub_dhcpv6_sessions), GRUB_AS_LIST (session));
+  session->duid.type = grub_cpu_to_be16_compile_time (3) ;
+  session->duid.hw_type = grub_cpu_to_be16_compile_time (1);
+  grub_memcpy (&session->duid.hwaddr, &iface->hwaddress.mac,
+	  sizeof (session->duid.hwaddr));
 
-  return;
+  grub_list_push (GRUB_AS_LIST_P (&grub_dhcpv6_sessions), GRUB_AS_LIST (session));
 }
 
 static void
@@ -358,8 +368,6 @@ grub_dhcpv6_sessions_free (void)
       grub_free (session);
       session = grub_dhcpv6_sessions;
     }
-
-  return;
 }
 
 static const char *
@@ -395,8 +403,15 @@ find_dhcpv6_option (const struct grub_dhcpv6_option *popt, grub_size_t size, gru
     {
       grub_uint16_t code, len;
 
+      if (size < sizeof (*popt))
+	{
+	  grub_error (GRUB_ERR_OUT_OF_RANGE, N_("DHCPv6 option size overflow detected"));
+	  return NULL;
+	}
+
+      size -= sizeof (*popt);
       code = grub_be_to_cpu16 (popt->code);
-      len = grub_be_to_cpu16 (popt->len) + sizeof (*popt);
+      len = grub_be_to_cpu16 (popt->len);
 
       if (size < len)
 	{
@@ -412,7 +427,7 @@ find_dhcpv6_option (const struct grub_dhcpv6_option *popt, grub_size_t size, gru
       else
 	{
 	  size -= len;
-	  popt = (const struct grub_dhcpv6_option *)((grub_uint8_t *)popt + len);
+	  popt = (const struct grub_dhcpv6_option *)((grub_uint8_t *)popt + len + sizeof (*popt));
 	}
     }
 
@@ -424,18 +439,6 @@ static const struct grub_dhcpv6_option*
 find_dhcpv6_option_in_packet (const struct grub_net_dhcpv6_packet *packet,
     grub_size_t size, grub_uint16_t option)
 {
-  if (!size || !packet)
-    {
-      grub_error (GRUB_ERR_BAD_ARGUMENT, N_("null or zero sized DHCPv6 packet buffer"));
-      return NULL;
-    }
-
-  if (size <= sizeof (*packet))
-    {
-      grub_error (GRUB_ERR_BAD_ARGUMENT, N_("DHCPv6 packet size too small"));
-      return NULL;
-    }
-
   return find_dhcpv6_option ((const struct grub_dhcpv6_option *)packet->dhcp_options,
 	  size - sizeof (*packet), option);
 }
@@ -512,8 +515,6 @@ get_dhcpv6_dns_address (const struct grub_net_dhcpv6_packet *packet, grub_size_t
       la->ipv6[1] = grub_get_unaligned64 (pa + 8);
       la->option = DNS_OPTION_PREFER_IPV6;
     }
-
-  return;
 }
 
 static void
@@ -641,8 +642,6 @@ cleanup:
 	  *boot_file = NULL;
 	}
     }
-
-  return;
 }
 
 
@@ -665,17 +664,13 @@ grub_net_configure_by_dhcpv6_adv (const struct grub_net_dhcpv6_packet *v6_adv,
 
   opt_client = find_dhcpv6_option_in_packet (v6_adv, size, GRUB_DHCPv6_OPTION_CLIENTID);
   if (grub_errno)
-    grub_error_push ();
+    return grub_errno;
 
   opt_server = find_dhcpv6_option_in_packet (v6_adv, size, GRUB_DHCPv6_OPTION_SERVERID);
   if (grub_errno)
-    grub_error_push ();
+    return grub_errno;
 
   opt_iana = find_dhcpv6_option_in_packet (v6_adv, size, GRUB_DHCPv6_OPTION_IA_NA);
-  if (grub_errno)
-    grub_error_push ();
-
-  grub_error_pop ();
   if (grub_errno)
     return grub_errno;
 
@@ -940,41 +935,59 @@ grub_net_process_dhcp (struct grub_net_buff *nb,
     }
 }
 
-void
+grub_err_t
 grub_net_process_dhcp6 (struct grub_net_buff *nb,
 	struct grub_net_card *card __attribute__ ((unused)))
 {
   const struct grub_net_dhcpv6_packet *v6;
   struct grub_dhcpv6_session *session;
-  const struct grub_dhcpv6_option *opt_iana;
+  const struct grub_dhcpv6_option *opt;
   const struct grub_dhcpv6_iana_option *ia_na;
+  const struct grub_DUID_LL *duid;
   grub_size_t size;
 
   v6 = (const struct grub_net_dhcpv6_packet *) nb->data;
 
   size = nb->tail - nb->data;
 
-  opt_iana = find_dhcpv6_option_in_packet (v6, size, GRUB_DHCPv6_OPTION_IA_NA);
-  if (!opt_iana)
-    {
-      grub_print_error ();
-      return;
-    }
+  if (size < sizeof (*v6))
+    return grub_error (GRUB_ERR_OUT_OF_RANGE, N_("DHCPv6 packet size too small"));
 
-  ia_na = (const struct grub_dhcpv6_iana_option *)opt_iana->data;
+  opt = find_dhcpv6_option_in_packet (v6, size, GRUB_DHCPv6_OPTION_IA_NA);
+  if (!opt)
+    return grub_errno;
+  if (grub_cpu_to_be16 (opt->len) < sizeof (*ia_na))
+    return grub_error (GRUB_ERR_OUT_OF_RANGE, N_("DHCPv6 packet is corrupted"));
+  ia_na = (const struct grub_dhcpv6_iana_option *)opt->data;
+
+  opt = find_dhcpv6_option_in_packet (v6, size, GRUB_DHCPv6_OPTION_CLIENTID);
+  if (!opt)
+    return grub_errno;
+  if (grub_cpu_to_be16 (opt->len) < sizeof (*duid))
+    return grub_error (GRUB_ERR_OUT_OF_RANGE, N_("DHCPv6 packet is corrupted"));
+  duid = (const struct grub_DUID_LL *)opt->data;
+
   FOR_DHCPV6_SESSIONS (session)
     {
-      if (session->transaction_id == v6->transaction_id
-	  && session->iaid == grub_cpu_to_be32 (ia_na->iaid))
+      /*FIXME: Compare DUID HREE  */
+      if (session->transaction_id == v6->transaction_id &&
+	  grub_memcmp (duid, &session->duid, sizeof (*duid)) == 0 &&
+	  session->iaid == grub_cpu_to_be32 (ia_na->iaid))
 	break;
     }
 
   if (!session)
-    return;
+    {
+      grub_dprintf ("bootp", "DHCPv6 session not found\n");
+      return GRUB_ERR_NONE;
+    }
 
   if (v6->message_type == GRUB_DHCPv6_ADVERTISE)
     {
       grub_net_configure_by_dhcpv6_adv (v6, size, session);
+  
+      if (grub_errno)
+	return grub_errno;
     }
   else if (v6->message_type == GRUB_DHCPv6_REPLY)
     {
@@ -984,24 +997,23 @@ grub_net_process_dhcp6 (struct grub_net_buff *nb,
       inf = session->iface;
       name = grub_xasprintf ("%s:dhcp6", inf->card->name);
       if (!name)
-	return;
+	return grub_errno;
 
       grub_net_configure_by_dhcpv6_reply (name, inf->card,
 	  0, v6, size, 0, 0, 0);
 
-      if (!grub_errno)
+      if (grub_errno)
 	{
-	  grub_list_remove (GRUB_AS_LIST (session));
-	  grub_free (session);
+	  grub_free (name);
+	  return grub_errno;
 	}
 
-      grub_free (name);
+	grub_list_remove (GRUB_AS_LIST (session));
+	grub_free (session);
+	grub_free (name);
     }
 
-  if (grub_errno)
-    grub_print_error ();
-
-  return;
+    return GRUB_ERR_NONE;
 }
 
 static char
@@ -1290,18 +1302,12 @@ grub_cmd_bootp6 (struct grub_command *cmd __attribute__ ((unused)),
 	int argc, char **args)
 {
   struct grub_net_card *card;
-  unsigned j = 0;
+  grub_uint32_t j = 0;
   int interval;
   grub_err_t err;
   struct grub_dhcpv6_session *session;
 
   err = GRUB_ERR_NONE;
-
-  FOR_NET_CARDS (card)
-  {
-    if (argc > 0 && grub_strcmp (card->name, args[0]) != 0)
-      continue;
-  }
 
   FOR_NET_CARDS (card)
   {
@@ -1317,10 +1323,8 @@ grub_cmd_bootp6 (struct grub_command *cmd __attribute__ ((unused)),
 	return grub_errno;
       }
 
-    session = grub_zalloc (sizeof (*session));
-    session->iface = iface;
-    session->iaid = j;
-    grub_dhcpv6_session_add (session);
+    session = grub_malloc (sizeof (*session));
+    grub_dhcpv6_session_add (session, iface, j);
     j++;
   }
 
@@ -1393,11 +1397,7 @@ grub_cmd_bootp6 (struct grub_command *cmd __attribute__ ((unused)),
 	  opt->len = grub_cpu_to_be16 (sizeof (*duid));
 
 	  duid = (struct grub_DUID_LL *) opt->data;
-
-	  duid->type = grub_cpu_to_be16_compile_time (3) ;
-	  duid->hw_type = grub_cpu_to_be16_compile_time (1);
-	  grub_memcpy (&duid->hwaddr, &session->iface->hwaddress.mac,
-	      sizeof (session->iface->hwaddress.mac));
+	  grub_memcpy (duid, &session->duid, sizeof (*duid));
 
 	  err = grub_netbuff_push (nb, sizeof (*opt) + sizeof (*ia_na));
 	  if (err)
@@ -1424,7 +1424,7 @@ grub_cmd_bootp6 (struct grub_command *cmd __attribute__ ((unused)),
 	    }
 
 	  v6 = (struct grub_net_dhcpv6_packet *)nb->data;
-	  v6->message_type = 1;
+	  v6->message_type = GRUB_DHCPv6_SOLICIT;
 	  v6->transaction_id = session->transaction_id;
 
 	  grub_netbuff_push (nb, sizeof (*udph));

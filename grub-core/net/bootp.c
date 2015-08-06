@@ -296,20 +296,25 @@ struct grub_DUID_LL
   grub_uint8_t hwaddr[6];
 } GRUB_PACKED;
 
-#define GRUB_DHCPv6_SOLICIT 1
-#define GRUB_DHCPv6_ADVERTISE 2
-#define GRUB_DHCPv6_REQUEST 3
-#define GRUB_DHCPv6_REPLY 7
+enum
+  {
+    GRUB_DHCPv6_SOLICIT = 1,
+    GRUB_DHCPv6_ADVERTISE = 2,
+    GRUB_DHCPv6_REQUEST = 3,
+    GRUB_DHCPv6_REPLY = 7
+  };
 
-/* FIXME: enum please. These can also be anonymous, no need to invent fancy names. ??*/
-#define GRUB_DHCPv6_OPTION_CLIENTID 1
-#define GRUB_DHCPv6_OPTION_SERVERID 2
-#define GRUB_DHCPv6_OPTION_IA_NA 3
-#define GRUB_DHCPv6_OPTION_IAADDR 5
-#define GRUB_DHCPv6_OPTION_ORO 6
-#define GRUB_DHCPv6_OPTION_ELAPSED_TIME 8
-#define GRUB_DHCPv6_OPTION_DNS_SERVERS 23
-#define GRUB_DHCPv6_OPTION_BOOTFILE_URL 59
+enum
+  {
+    GRUB_DHCPv6_OPTION_CLIENTID = 1,
+    GRUB_DHCPv6_OPTION_SERVERID = 2,
+    GRUB_DHCPv6_OPTION_IA_NA = 3,
+    GRUB_DHCPv6_OPTION_IAADDR = 5,
+    GRUB_DHCPv6_OPTION_ORO = 6,
+    GRUB_DHCPv6_OPTION_ELAPSED_TIME = 8,
+    GRUB_DHCPv6_OPTION_DNS_SERVERS = 23,
+    GRUB_DHCPv6_OPTION_BOOTFILE_URL = 59
+  };
 
 /* The default netbuff size for sending DHCPv6 packets which should be
    large enough to hold the information */

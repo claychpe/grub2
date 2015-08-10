@@ -440,24 +440,70 @@ find_dhcpv6_option (const struct grub_dhcpv6_option *popt, grub_size_t size, gru
   return NULL;
 }
 
-static const struct grub_dhcpv6_option*
-find_dhcpv6_option_in_packet (const struct grub_net_dhcpv6_packet *packet,
-    grub_size_t size, grub_uint16_t option)
+static grub_err_t
+check_dhcpv6_options (const struct grub_dhcpv6_option *opt, grub_size_t size)
 {
-  return find_dhcpv6_option ((const struct grub_dhcpv6_option *)packet->dhcp_options,
-	  size - sizeof (*packet), option);
+  while (size > 0)
+    {
+      grub_uint16_t len;
+
+      if (size < sizeof (*opt))
+	return grub_error (GRUB_ERR_OUT_OF_RANGE, N_("DHCPv6 option size overflow detected"));
+
+      size -= sizeof (*opt);
+      len = grub_be_to_cpu16 (opt->len);
+
+      if (len == 0)
+	break;
+
+      if (size < len)
+	return grub_error (GRUB_ERR_OUT_OF_RANGE, N_("DHCPv6 option size overflow detected"));
+
+      size -= len;
+      opt = (const struct grub_dhcpv6_option *)((grub_uint8_t *)opt + len + sizeof (*opt));
+    }
+
+  return GRUB_ERR_NONE;
+}
+
+static grub_err_t
+get_dhcpv6_options (const struct grub_net_dhcpv6_packet *v6,
+      grub_size_t size,
+      const struct grub_dhcpv6_option **opts,
+      grub_size_t *opts_size)
+{
+  if (size < sizeof (*v6))
+    {
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("DHCPv6 packet size too small"));
+      goto err_out;
+    }
+
+  *opts = (const struct grub_dhcpv6_option *)v6->dhcp_options;
+  *opts_size = size - sizeof (*v6);
+
+  check_dhcpv6_options (*opts, *opts_size);
+
+  if (grub_errno)
+    goto err_out;
+
+  return GRUB_ERR_NONE;
+
+err_out:
+  *opts = NULL;
+  *opts_size = 0; 
+
+  return grub_errno;
 }
 
 static const grub_uint8_t*
-find_dhcpv6_address (const struct grub_net_dhcpv6_packet *packet, grub_size_t size)
+find_dhcpv6_address (const struct grub_dhcpv6_option *opts, grub_size_t size)
 {
   const struct grub_dhcpv6_option* popt;
   const struct grub_dhcpv6_iana_option *ia_na;
   const struct grub_dhcpv6_iaaddr_option *iaaddr;
   grub_uint16_t ia_na_len;
 
-  popt = find_dhcpv6_option_in_packet (packet, size, GRUB_DHCPv6_OPTION_IA_NA);
-
+  popt = find_dhcpv6_option (opts, size, GRUB_DHCPv6_OPTION_IA_NA);
   if (!popt)
     return NULL;
 
@@ -475,10 +521,10 @@ find_dhcpv6_address (const struct grub_net_dhcpv6_packet *packet, grub_size_t si
 }
 
 static void
-get_dhcpv6_dns_address (const struct grub_net_dhcpv6_packet *packet, grub_size_t size,
+get_dhcpv6_dns_address (const struct grub_dhcpv6_option *opts, grub_size_t size,
 	grub_net_network_level_address_t **addr, grub_uint16_t *naddr)
 {
-  const struct grub_dhcpv6_option* popt;
+  const struct grub_dhcpv6_option *popt;
   grub_uint16_t len, ln;
   const grub_uint8_t *pa;
   grub_net_network_level_address_t *la;
@@ -492,7 +538,7 @@ get_dhcpv6_dns_address (const struct grub_net_dhcpv6_packet *packet, grub_size_t
   *addr = NULL;
   *naddr = 0;
 
-  popt = find_dhcpv6_option_in_packet (packet, size, GRUB_DHCPv6_OPTION_DNS_SERVERS);
+  popt = find_dhcpv6_option (opts, size, GRUB_DHCPv6_OPTION_DNS_SERVERS);
   if (!popt)
     return;
 
@@ -523,7 +569,7 @@ get_dhcpv6_dns_address (const struct grub_net_dhcpv6_packet *packet, grub_size_t
 }
 
 static grub_err_t 
-find_dhcpv6_bootfile_url (const struct grub_net_dhcpv6_packet *packet, grub_size_t size,
+find_dhcpv6_bootfile_url (const struct grub_dhcpv6_option *opts, grub_size_t size,
 	char **proto, char **server_ip, char **boot_file)
 {
   const struct grub_dhcpv6_option* opt;
@@ -532,7 +578,7 @@ find_dhcpv6_bootfile_url (const struct grub_net_dhcpv6_packet *packet, grub_size
   const char *protos[] = {"tftp://", "http://", NULL};
   const char **pr;
 
-  opt = find_dhcpv6_option_in_packet (packet, size, GRUB_DHCPv6_OPTION_BOOTFILE_URL);
+  opt = find_dhcpv6_option (opts, size, GRUB_DHCPv6_OPTION_BOOTFILE_URL);
 
   if (!opt)
     return grub_errno;;
@@ -600,8 +646,9 @@ grub_net_configure_by_dhcpv6_adv (const struct grub_net_dhcpv6_packet *v6_adv,
 	struct grub_dhcpv6_session *session)
 {
   struct grub_net_buff *nb;
-  const struct grub_dhcpv6_option *opt_client, *opt_server, *opt_iana;
+  const struct grub_dhcpv6_option *opts, *opt_client, *opt_server, *opt_iana;
   struct grub_dhcpv6_option *popt;
+  grub_size_t opts_sz;
   struct grub_net_dhcpv6_packet *v6;
   struct udphdr *udph;
   grub_net_network_level_address_t multicast;
@@ -611,15 +658,19 @@ grub_net_configure_by_dhcpv6_adv (const struct grub_net_dhcpv6_packet *v6_adv,
   grub_uint64_t elapsed;
   grub_err_t err = GRUB_ERR_NONE;
 
-  opt_client = find_dhcpv6_option_in_packet (v6_adv, size, GRUB_DHCPv6_OPTION_CLIENTID);
+  err = get_dhcpv6_options (v6_adv, size, &opts, &opts_sz);
+  if (err)
+    return err;
+
+  opt_client = find_dhcpv6_option (opts, opts_sz, GRUB_DHCPv6_OPTION_CLIENTID);
   if (grub_errno)
     return grub_errno;
 
-  opt_server = find_dhcpv6_option_in_packet (v6_adv, size, GRUB_DHCPv6_OPTION_SERVERID);
+  opt_server = find_dhcpv6_option (opts, opts_sz, GRUB_DHCPv6_OPTION_SERVERID);
   if (grub_errno)
     return grub_errno;
 
-  opt_iana = find_dhcpv6_option_in_packet (v6_adv, size, GRUB_DHCPv6_OPTION_IA_NA);
+  opt_iana = find_dhcpv6_option (opts, opts_sz, GRUB_DHCPv6_OPTION_IA_NA);
   if (grub_errno)
     return grub_errno;
 
@@ -738,7 +789,6 @@ grub_net_configure_by_dhcpv6_adv (const struct grub_net_dhcpv6_packet *v6_adv,
   return err;
 }
 
-
 struct grub_net_network_level_interface *
 grub_net_configure_by_dhcpv6_reply (const char *name,
 	struct grub_net_card *card,
@@ -757,6 +807,9 @@ grub_net_configure_by_dhcpv6_reply (const char *name,
   char *boot_file;
   grub_net_network_level_address_t *dns;
   grub_uint16_t num_dns;
+  grub_err_t err;
+  const struct grub_dhcpv6_option *opts;
+  grub_size_t opts_sz;
 
   if (device)
     *device = NULL;
@@ -770,7 +823,13 @@ grub_net_configure_by_dhcpv6_reply (const char *name,
       return NULL;
     }
 
-  your_ip = find_dhcpv6_address(v6, size);
+  grub_printf ("replay pkt in firmware size %lu\n", size);
+
+  err = get_dhcpv6_options (v6, size, &opts, &opts_sz);
+  if (err)
+    return NULL;
+
+  your_ip = find_dhcpv6_address(opts, opts_sz);
 
   if (!your_ip)
     return NULL;
@@ -786,7 +845,7 @@ grub_net_configure_by_dhcpv6_reply (const char *name,
   netaddr.ipv6.masksize = 64;
   grub_net_add_route (name, netaddr, inf);
 
-  get_dhcpv6_dns_address (v6, size, &dns, &num_dns);
+  get_dhcpv6_dns_address (opts, opts_sz, &dns, &num_dns);
 
   if (grub_errno)
     grub_errno = GRUB_ERR_NONE;
@@ -802,7 +861,7 @@ grub_net_configure_by_dhcpv6_reply (const char *name,
     }
 
   proto = server_ip = boot_file = NULL;
-  find_dhcpv6_bootfile_url (v6, size, &proto, &server_ip, &boot_file);
+  find_dhcpv6_bootfile_url (opts, opts_sz, &proto, &server_ip, &boot_file);
 
   if (grub_errno)
     grub_print_error ();
@@ -891,26 +950,26 @@ grub_net_process_dhcp6 (struct grub_net_buff *nb,
 {
   const struct grub_net_dhcpv6_packet *v6;
   struct grub_dhcpv6_session *session;
-  const struct grub_dhcpv6_option *opt;
+  const struct grub_dhcpv6_option *opts, *opt;
   const struct grub_dhcpv6_iana_option *ia_na;
   const struct grub_DUID_LL *duid;
-  grub_size_t size;
+  grub_size_t size, opts_size;
 
   v6 = (const struct grub_net_dhcpv6_packet *) nb->data;
-
   size = nb->tail - nb->data;
 
-  if (size < sizeof (*v6))
-    return grub_error (GRUB_ERR_OUT_OF_RANGE, N_("DHCPv6 packet size too small"));
+  get_dhcpv6_options (v6, size, &opts, &opts_size);
+  if (grub_errno)
+    return grub_errno;
 
-  opt = find_dhcpv6_option_in_packet (v6, size, GRUB_DHCPv6_OPTION_IA_NA);
+  opt = find_dhcpv6_option (opts, opts_size, GRUB_DHCPv6_OPTION_IA_NA);
   if (!opt)
     return grub_errno;
   if (grub_cpu_to_be16 (opt->len) < sizeof (*ia_na))
     return grub_error (GRUB_ERR_OUT_OF_RANGE, N_("DHCPv6 packet is corrupted"));
   ia_na = (const struct grub_dhcpv6_iana_option *)opt->data;
 
-  opt = find_dhcpv6_option_in_packet (v6, size, GRUB_DHCPv6_OPTION_CLIENTID);
+  opt = find_dhcpv6_option (opts, opts_size, GRUB_DHCPv6_OPTION_CLIENTID);
   if (!opt)
     return grub_errno;
   if (grub_cpu_to_be16 (opt->len) < sizeof (*duid))
@@ -919,7 +978,6 @@ grub_net_process_dhcp6 (struct grub_net_buff *nb,
 
   FOR_DHCPV6_SESSIONS (session)
     {
-      /*FIXME: Compare DUID HREE  */
       if (session->transaction_id == v6->transaction_id &&
 	  grub_memcmp (duid, &session->duid, sizeof (*duid)) == 0 &&
 	  session->iaid == grub_cpu_to_be32 (ia_na->iaid))

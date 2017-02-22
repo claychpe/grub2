@@ -32,6 +32,8 @@
 
 static char *rootdir = NULL, *subdir = NULL;
 static char *debug_image = NULL;
+/* HACK : */
+static char pref_native = 1;
 
 enum
   {
@@ -151,9 +153,12 @@ process_input_dir (const char *input_dir, enum grub_install_plat platform)
   fprintf (cfg, "source %s/grub.cfg", subdir);
   fclose (cfg);
 
-  grub_install_push_module (targets[platform].netmodule);
+  /* HACK : */
+  if (!pref_native)
+    grub_install_push_module (targets[platform].netmodule);
 
   output = grub_util_path_concat_ext (2, grubdir, "core", targets[platform].ext);
+
   grub_install_make_image_wrap (input_dir, prefix, output,
 				0, load_cfg,
 				targets[platform].mkimage_target, 0);
@@ -190,7 +195,14 @@ main (int argc, char *argv[])
 
   grub_install_mkdir_p (base);
 
-  grub_install_push_module ("tftp");
+  /* HACK : */
+  if (!pref_native)
+    {
+      grub_install_push_module ("tftp");
+      grub_install_push_module ("http");
+    }
+  else
+    grub_install_push_module ("efi_netfs");
 
   if (!grub_install_source_directory)
     {

@@ -21,6 +21,13 @@ struct grub_efi_net_interface
   struct grub_efi_net_interface *next;
 };
 
+#define efi_net_interface_get_hw_address(inf) inf->ip_config->get_hw_address (inf->dev)
+#define efi_net_interface_get_address(inf) inf->ip_config->get_address (inf->dev)
+#define efi_net_interface_get_route_table(inf) inf->ip_config->get_route_table (inf->dev)
+#define efi_net_interface_set_address(inf, addr, with_subnet) inf->ip_config->set_address (inf->dev, addr, with_subnet)
+#define efi_net_interface_set_gateway(inf, addr) inf->ip_config->set_gateway (inf->dev, addr)
+#define efi_net_interface_set_dns(inf, addr) inf->ip_config->set_dns (inf->dev, addr)
+
 struct grub_efi_net_ip_config
 {
   char * (*get_hw_address) (struct grub_efi_net_device *dev);
@@ -28,6 +35,8 @@ struct grub_efi_net_ip_config
   char ** (*get_route_table) (struct grub_efi_net_device *dev);
   grub_efi_net_interface_t * (*best_interface) (struct grub_efi_net_device *dev, grub_efi_net_ip_address_t *address);
   int (*set_address) (struct grub_efi_net_device *dev, grub_efi_net_ip_manual_address_t *net_ip, int with_subnet);
+  int (*set_gateway) (struct grub_efi_net_device *dev, grub_efi_net_ip_address_t *address);
+  int (*set_dns) (struct grub_efi_net_device *dev, grub_efi_net_ip_address_t *dns);
 };
 
 union grub_efi_net_ip_address

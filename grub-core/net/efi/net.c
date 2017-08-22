@@ -37,11 +37,6 @@ static grub_efi_net_interface_t *net_default_interface;
 #define efi_net_interface_close(inf, file) inf->io->close (inf->dev, inf->prefer_ip6, file)
 #define efi_net_interface(m,...) efi_net_interface_ ## m (net_interface, ## __VA_ARGS__)
 
-#define efi_net_interface_get_hw_address(inf) inf->ip_config->get_hw_address (inf->dev)
-#define efi_net_interface_get_address(inf) inf->ip_config->get_address (inf->dev)
-#define efi_net_interface_get_route_table(inf) inf->ip_config->get_route_table (inf->dev)
-#define efi_net_interface_set_address(inf, addr, with_subnet) inf->ip_config->set_address (inf->dev, addr, with_subnet)
-
 static grub_efi_handle_t
 grub_efi_locate_device_path (grub_efi_guid_t *protocol, grub_efi_device_path_t *device_path,
                             grub_efi_device_path_t **r_device_path)
@@ -809,7 +804,7 @@ match_route (const char *server)
       grub_memcpy (addr.ip6, ip6.address, sizeof(ip6.address));
 
       for (dev = net_devices; dev; dev = dev->next)
-	  if ((inf = efi_net_ip4_config->best_interface (dev, &addr)))
+	  if ((inf = efi_net_ip6_config->best_interface (dev, &addr)))
 	    return inf;
     }
   else
@@ -820,11 +815,9 @@ match_route (const char *server)
       grub_memcpy (addr.ip4, ip4.address, sizeof(ip4.address));
 
       for (dev = net_devices; dev; dev = dev->next)
-	  if ((inf = efi_net_ip6_config->best_interface (dev, &addr)))
+	  if ((inf = efi_net_ip4_config->best_interface (dev, &addr)))
 	    return inf;
     }
-
-  /* FALLBACK To Use Default Device */
 
   return 0;
 }

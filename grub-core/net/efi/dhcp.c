@@ -167,6 +167,8 @@ grub_cmd_efi_bootp (struct grub_command *cmd __attribute__ ((unused)),
       grub_efi_dhcp4_config_data_t config;
       grub_efi_dhcp4_packet_option_t *options;
       grub_efi_ipv4_address_t *dns_address;
+      grub_efi_net_ip_manual_address_t net_ip;
+      grub_efi_net_interface_t *inf = NULL;
 
       grub_memset (&config, 0, sizeof(config));
 
@@ -210,27 +212,35 @@ grub_cmd_efi_bootp (struct grub_command *cmd __attribute__ ((unused)),
       dhcp4_mode_print (&mode);
 #endif
 
-      grub_efi_ip4_config2_manual_address_t manual_addr;
+      for (inf = netdev->net_interfaces; inf; inf = inf->next)
+	if (inf->prefer_ip6 == 0)
+	  break;
 
-      grub_memcpy (manual_addr.address, mode.client_address, sizeof (manual_addr.address));
-      grub_memcpy (manual_addr.subnet_mask, mode.subnet_mask, sizeof (manual_addr.subnet_mask));
+      grub_memcpy (net_ip.ip4.address, mode.client_address, sizeof (net_ip.ip4.address));
+      grub_memcpy (net_ip.ip4.subnet_mask, mode.subnet_mask, sizeof (net_ip.ip4.subnet_mask));
 
-      status = efi_call_4 (netdev->ip4_config->set_data, netdev->ip4_config,
-		    GRUB_EFI_IP4_CONFIG2_DATA_TYPE_MANUAL_ADDRESS,
-		    sizeof (manual_addr), &manual_addr);
+      if (!inf)
+	{
+	  char *name = grub_xasprintf ("%s:dhcp", netdev->card_name);
 
-      status = efi_call_4 (netdev->ip4_config->set_data, netdev->ip4_config,
-		    GRUB_EFI_IP4_CONFIG2_DATA_TYPE_GATEWAY,
-		    sizeof (mode.router_address), &mode.router_address);
+	  net_ip.is_ip6 = 0;
+	  inf = grub_efi_net_create_interface (netdev,
+		    name,
+		    &net_ip,
+		    1);
+	  grub_free (name);
+	}
+      else
+	{
+	  efi_net_interface_set_address (inf, &net_ip, 1);
+	}
+
+      efi_net_interface_set_gateway (inf, (grub_efi_net_ip_address_t *)&mode.router_address);
 
       dns_address = grub_efi_dhcp4_parse_dns (netdev->dhcp4, mode.reply_packet);
-
       if (dns_address)
-	{
-	  status = efi_call_4 (netdev->ip4_config->set_data, netdev->ip4_config,
-		    GRUB_EFI_IP4_CONFIG2_DATA_TYPE_DNSSERVER,
-		    sizeof (*dns_address), dns_address);
-	}
+	efi_net_interface_set_dns (inf, (grub_efi_net_ip_address_t *)&dns_address);
+
     }
 
   return GRUB_ERR_NONE;

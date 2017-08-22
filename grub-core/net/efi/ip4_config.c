@@ -304,17 +304,16 @@ grub_efi_ip4_interface_match (struct grub_efi_net_device *dev, grub_efi_net_ip_a
 
       if ((u32_address & u32_mask) == u32_subnet)
 	{
-	  grub_free (interface_info);
-	  return NULL;
+	  for (inf = dev->net_interfaces; inf; inf = inf->next)
+	    if (!inf->prefer_ip6)
+	      {
+		grub_free (interface_info);
+		return inf;
+	      }
 	}
     }
 
   grub_free (interface_info);
-
-  for (inf = dev->net_interfaces; inf; inf = inf->next)
-    if (!inf->prefer_ip6)
-      return inf;
-
   return NULL;
 }
 
@@ -356,11 +355,45 @@ grub_efi_ip4_interface_set_manual_address (struct grub_efi_net_device *dev,
   return 1;
 }
 
+static int
+grub_efi_ip4_interface_set_gateway (struct grub_efi_net_device *dev,
+	      grub_efi_net_ip_address_t *address)
+{
+  grub_efi_status_t status;
+
+  status = efi_call_4 (dev->ip4_config->set_data, dev->ip4_config,
+		GRUB_EFI_IP4_CONFIG2_DATA_TYPE_GATEWAY,
+		sizeof (address->ip4), &address->ip4);
+
+  if (status != GRUB_EFI_SUCCESS)
+    return 0;
+  return 1;
+}
+
+/* FIXME: Multiple DNS */
+static int
+grub_efi_ip4_interface_set_dns (struct grub_efi_net_device *dev,
+	      grub_efi_net_ip_address_t *address)
+{
+
+  grub_efi_status_t status;
+
+  status = efi_call_4 (dev->ip4_config->set_data, dev->ip4_config,
+		GRUB_EFI_IP4_CONFIG2_DATA_TYPE_DNSSERVER,
+		sizeof (address->ip4), &address->ip4);
+
+  if (status != GRUB_EFI_SUCCESS)
+    return 0;
+  return 1;
+}
+
 grub_efi_net_ip_config_t *efi_net_ip4_config = &(grub_efi_net_ip_config_t)
   {
     .get_hw_address = grub_efi_ip4_interface_hw_address,
     .get_address = grub_efi_ip4_interface_address,
     .get_route_table = grub_efi_ip4_interface_route_table,
     .best_interface = grub_efi_ip4_interface_match,
-    .set_address = grub_efi_ip4_interface_set_manual_address
+    .set_address = grub_efi_ip4_interface_set_manual_address,
+    .set_gateway = grub_efi_ip4_interface_set_gateway,
+    .set_dns = grub_efi_ip4_interface_set_dns
   };

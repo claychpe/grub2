@@ -331,17 +331,16 @@ grub_efi_ip6_interface_match (struct grub_efi_net_device *dev, grub_efi_net_ip_a
       if (((u64_addr[0] & u64_mask[0]) == u64_subnet[0])
 	  && ((u64_addr[1] & u64_mask[1]) == u64_subnet[1]))
 	{
-	  grub_free (interface_info);
-	  return NULL;
+	  for (inf = dev->net_interfaces; inf; inf = inf->next)
+	    if (inf->prefer_ip6)
+	      {
+		grub_free (interface_info);
+		return inf;
+	      }
 	}
     }
 
   grub_free (interface_info);
-
-  for (inf = dev->net_interfaces; inf; inf = inf->next)
-    if (inf->prefer_ip6)
-      return inf;
-
   return NULL;
 }
 
@@ -380,11 +379,44 @@ grub_efi_ip6_interface_set_manual_address (struct grub_efi_net_device *dev,
   return 1;
 }
 
+static int
+grub_efi_ip6_interface_set_gateway (struct grub_efi_net_device *dev,
+	      grub_efi_net_ip_address_t *address)
+{
+  grub_efi_status_t status;
+
+  status = efi_call_4 (dev->ip6_config->set_data, dev->ip6_config,
+		GRUB_EFI_IP6_CONFIG_DATA_TYPE_GATEWAY,
+		sizeof (address->ip6), &address->ip6);
+
+  if (status != GRUB_EFI_SUCCESS)
+    return 0;
+  return 1;
+}
+
+static int
+grub_efi_ip6_interface_set_dns (struct grub_efi_net_device *dev,
+	      grub_efi_net_ip_address_t *address)
+{
+
+  grub_efi_status_t status;
+
+  status = efi_call_4 (dev->ip6_config->set_data, dev->ip6_config,
+		GRUB_EFI_IP6_CONFIG_DATA_TYPE_DNSSERVER,
+		sizeof (address->ip6), &address->ip6);
+
+  if (status != GRUB_EFI_SUCCESS)
+    return 0;
+  return 1;
+}
+
 grub_efi_net_ip_config_t *efi_net_ip6_config = &(grub_efi_net_ip_config_t)
   {
     .get_hw_address = grub_efi_ip6_interface_hw_address,
     .get_address = grub_efi_ip6_interface_address,
     .get_route_table = grub_efi_ip6_interface_route_table,
     .best_interface = grub_efi_ip6_interface_match,
-    .set_address = grub_efi_ip6_interface_set_manual_address
+    .set_address = grub_efi_ip6_interface_set_manual_address,
+    .set_gateway = grub_efi_ip6_interface_set_gateway,
+    .set_dns = grub_efi_ip6_interface_set_dns
   };

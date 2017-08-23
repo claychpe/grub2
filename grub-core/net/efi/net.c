@@ -24,6 +24,8 @@ static grub_efi_guid_t http_guid = GRUB_EFI_HTTP_PROTOCOL_GUID;
 static grub_efi_guid_t pxe_io_guid = GRUB_EFI_PXE_GUID;
 static grub_efi_guid_t dhcp4_service_binding_guid = GRUB_EFI_DHCP4_SERVICE_BINDING_PROTOCOL_GUID;
 static grub_efi_guid_t dhcp4_guid = GRUB_EFI_DHCP4_PROTOCOL_GUID;
+static grub_efi_guid_t dhcp6_service_binding_guid = GRUB_EFI_DHCP6_SERVICE_BINDING_PROTOCOL_GUID;
+static grub_efi_guid_t dhcp6_guid = GRUB_EFI_DHCP6_PROTOCOL_GUID;
 
 struct grub_efi_net_device *net_devices;
 
@@ -955,6 +957,8 @@ grub_efi_net_find_cards (void)
       grub_efi_http_t *http;
       grub_efi_handle_t dhcp4_handle;
       grub_efi_dhcp4_protocol_t *dhcp4;
+      grub_efi_handle_t dhcp6_handle;
+      grub_efi_dhcp6_protocol_t *dhcp6;
 
       struct grub_efi_net_device *d;
 
@@ -995,6 +999,16 @@ grub_efi_net_find_cards (void)
       if (!dhcp4)
 	continue;
 
+      dhcp6_handle = grub_efi_service_binding (*handle, &dhcp6_service_binding_guid);
+
+      if (!dhcp6_handle)
+	continue;
+
+      dhcp6 = grub_efi_open_protocol (dhcp6_handle, &dhcp6_guid,
+			      GRUB_EFI_OPEN_PROTOCOL_GET_PROTOCOL);
+
+      if (!dhcp6)
+	continue;
       d = grub_malloc (sizeof (*d));
       if (!d)
 	{
@@ -1014,6 +1028,8 @@ grub_efi_net_find_cards (void)
       d->http = http;
       d->dhcp4_handle = dhcp4_handle;
       d->dhcp4 = dhcp4;
+      d->dhcp6_handle = dhcp6_handle;
+      d->dhcp6 = dhcp6;
       d->next = net_devices;
       d->card_name = grub_xasprintf ("efinet%d", id);
       d->net_interfaces = NULL;

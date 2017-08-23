@@ -68,6 +68,8 @@ struct grub_efi_net_device
   grub_efi_pxe_t *ip6_pxe;
   grub_efi_handle_t dhcp4_handle;
   grub_efi_dhcp4_protocol_t *dhcp4;
+  grub_efi_handle_t dhcp6_handle;
+  grub_efi_dhcp6_protocol_t *dhcp6;
   char *card_name;
   grub_efi_net_interface_t *net_interfaces;
   struct grub_efi_net_device *next;

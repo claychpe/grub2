@@ -375,7 +375,6 @@ static int
 grub_efi_ip4_interface_set_dns (struct grub_efi_net_device *dev,
 	      grub_efi_net_ip_address_t *address)
 {
-
   grub_efi_status_t status;
 
   status = efi_call_4 (dev->ip4_config->set_data, dev->ip4_config,

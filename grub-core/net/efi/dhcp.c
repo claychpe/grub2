@@ -155,8 +155,8 @@ grub_cmd_efi_bootp (struct grub_command *cmd __attribute__ ((unused)),
 
 static grub_err_t
 grub_cmd_efi_bootp (struct grub_command *cmd __attribute__ ((unused)),
-		    int argc __attribute__ ((unused)),
-		    char **args __attribute__ ((unused)))
+		    int argc,
+		    char **args)
 {
   struct grub_efi_net_device *netdev;
 
@@ -169,6 +169,9 @@ grub_cmd_efi_bootp (struct grub_command *cmd __attribute__ ((unused)),
       grub_efi_ipv4_address_t *dns_address;
       grub_efi_net_ip_manual_address_t net_ip;
       grub_efi_net_interface_t *inf = NULL;
+
+      if (argc > 0 && grub_strcmp (netdev->card_name, args[0]) != 0)
+	continue;
 
       grub_memset (&config, 0, sizeof(config));
 
@@ -246,16 +249,163 @@ grub_cmd_efi_bootp (struct grub_command *cmd __attribute__ ((unused)),
   return GRUB_ERR_NONE;
 }
 
+
+static grub_err_t
+grub_cmd_efi_bootp6 (struct grub_command *cmd __attribute__ ((unused)),
+		    int argc,
+		    char **args)
+{
+  struct grub_efi_net_device *dev;
+  grub_efi_uint32_t ia_id;
+
+  for (dev = net_devices, ia_id = 0; dev; dev = dev->next, ia_id++)
+    {
+      grub_efi_dhcp6_config_data_t config;
+      grub_efi_dhcp6_packet_option_t *option_list[1];
+      grub_efi_dhcp6_packet_option_t *opt;
+      grub_efi_status_t status;
+      grub_efi_dhcp6_mode_data_t mode;
+      grub_efi_dhcp6_retransmission_t retrans;
+      grub_efi_net_ip_manual_address_t net_ip;
+      grub_efi_boot_services_t *b = grub_efi_system_table->boot_services;
+      grub_efi_net_interface_t *inf = NULL;
+
+      if (argc > 0 && grub_strcmp (dev->card_name, args[0]) != 0)
+	continue;
+
+      opt = grub_malloc (sizeof(*opt) + 2 * sizeof (grub_efi_uint16_t));
+
+#define GRUB_EFI_DHCP6_OPT_ORO 6
+
+      opt->op_code = grub_cpu_to_be16_compile_time (GRUB_EFI_DHCP6_OPT_ORO);
+      opt->op_len = grub_cpu_to_be16_compile_time (2 * sizeof (grub_efi_uint16_t));
+
+#define GRUB_EFI_DHCP6_OPT_BOOT_FILE_URL 59
+#define GRUB_EFI_DHCP6_OPT_DNS_SERVERS 23
+
+      grub_set_unaligned16 (opt->data, grub_cpu_to_be16_compile_time(GRUB_EFI_DHCP6_OPT_BOOT_FILE_URL));
+      grub_set_unaligned16 (opt->data + 1 * sizeof (grub_efi_uint16_t),
+	      grub_cpu_to_be16_compile_time(GRUB_EFI_DHCP6_OPT_DNS_SERVERS));
+
+      option_list[0] = opt;
+      retrans.irt = 4;
+      retrans.mrc = 4;
+      retrans.mrt = 32;
+      retrans.mrd = 60;
+
+      config.dhcp6_callback = NULL;
+      config.callback_context = NULL;
+      config.option_count = 1;
+      config.option_list = option_list;
+      config.ia_descriptor.ia_id = ia_id;
+      config.ia_descriptor.type = GRUB_EFI_DHCP6_IA_TYPE_NA;
+      config.ia_info_event = NULL;
+      config.reconfigure_accept = 0;
+      config.rapid_commit = 0;
+      config.solicit_retransmission = &retrans;
+
+      status = efi_call_2 (dev->dhcp6->configure, dev->dhcp6, &config);
+      grub_free (opt);
+      if (status != GRUB_EFI_SUCCESS)
+	{
+	  grub_printf ("dhcp6 configure failed, %d\n", (int)status);
+	  continue;
+	}
+      status = efi_call_1 (dev->dhcp6->start, dev->dhcp6);
+      if (status != GRUB_EFI_SUCCESS)
+	{
+	  grub_printf ("dhcp6 start failed, %d\n", (int)status);
+	  continue;
+	}
+
+      status = efi_call_3 (dev->dhcp6->get_mode_data, dev->dhcp6, &mode, NULL);
+      if (status != GRUB_EFI_SUCCESS)
+	{
+	  grub_printf ("dhcp4 get mode failed, %d\n", (int)status);
+	  continue;
+	}
+
+      for (inf = dev->net_interfaces; inf; inf = inf->next)
+	if (inf->prefer_ip6 == 1)
+	  break;
+
+      grub_memcpy (net_ip.ip6.address, mode.ia->ia_address[0].ip_address, sizeof (net_ip.ip6.address));
+      net_ip.ip6.prefix_length = 64;
+      net_ip.ip6.is_anycast = 0;
+      net_ip.is_ip6 = 1;
+
+      if (!inf)
+	{
+	  char *name = grub_xasprintf ("%s:dhcp", dev->card_name);
+
+	  inf = grub_efi_net_create_interface (dev,
+		    name,
+		    &net_ip,
+		    1);
+	  grub_free (name);
+	}
+      else
+	{
+	  efi_net_interface_set_address (inf, &net_ip, 1);
+	}
+
+      {
+	grub_efi_uint32_t count = 0;
+	grub_efi_dhcp6_packet_option_t **options = NULL;
+	grub_efi_uint32_t i;
+
+	status = efi_call_4 (dev->dhcp6->parse, dev->dhcp6, mode.ia->reply_packet, &count, NULL);
+
+	if (status == GRUB_EFI_BUFFER_TOO_SMALL && count)
+	  {
+	    options = grub_malloc (count * sizeof(*options));
+	    status = efi_call_4 (dev->dhcp6->parse, dev->dhcp6, mode.ia->reply_packet, &count, options);
+	  }
+
+	if (status != GRUB_EFI_SUCCESS)
+	  {
+	    if (options)
+	      grub_free (options);
+	    continue;
+	  }
+
+	for (i = 0; i < count; ++i)
+	  {
+	    if (options[i]->op_code == grub_cpu_to_be16_compile_time(GRUB_EFI_DHCP6_OPT_DNS_SERVERS))
+	      {
+		grub_efi_net_ip_address_t dns;
+		grub_memcpy (dns.ip6, options[i]->data, sizeof(net_ip.ip6));
+		efi_net_interface_set_dns (inf, &dns);
+		break;
+	      }
+	  }
+
+	if (options)
+	  grub_free (options);
+      }
+
+      efi_call_1 (b->free_pool, mode.client_id);
+      efi_call_1 (b->free_pool, mode.ia);
+    }
+
+  return GRUB_ERR_NONE;
+}
+
 static grub_command_t cmd_efi_bootp;
+static grub_command_t cmd_efi_bootp6;
 
 void grub_efi_net_dhcp_init (void)
 {
   cmd_efi_bootp = grub_register_command ("net_efi_bootp", grub_cmd_efi_bootp,
 				     N_("[CARD]"),
 				     N_("perform a bootp autoconfiguration"));
+  cmd_efi_bootp6 = grub_register_command ("net_efi_bootp6", grub_cmd_efi_bootp6,
+				     N_("[CARD]"),
+				     N_("perform a bootp autoconfiguration"));
 }
 void grub_efi_net_dhcp_fini (void)
 {
   grub_unregister_command (cmd_efi_bootp);
+  grub_unregister_command (cmd_efi_bootp6);
 }
 

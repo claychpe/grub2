@@ -1327,11 +1327,8 @@ static struct grub_fs grub_efi_netfs =
 GRUB_MOD_INIT(efi_netfs)
 {
   grub_efi_net_find_cards ();
-  /* TODO: Check grub_efi_net_config is in used ?? */
   grub_efi_net_config = grub_efi_net_config_real;
-  /* TODO: Check grub_net_open is in used ?? */
   grub_net_open = grub_net_open_real;
-  /* FIXME: How to deak with conflits of used environment vars with grub's native net ??? */
   grub_register_variable_hook ("net_default_server", grub_efi_net_var_get_server,
 			       grub_efi_net_var_set_server);
   grub_env_export ("net_default_server");
@@ -1347,14 +1344,13 @@ GRUB_MOD_INIT(efi_netfs)
   grub_register_variable_hook ("net_default_mac", grub_efi_net_var_get_mac,
 			       0);
   grub_env_export ("net_default_mac");
-  /* TODO: use other type of grub_register_command ??? */
-  cmd_efi_lsroutes = grub_register_command ("net_efi_ls_routes", grub_cmd_efi_listroutes,
+  cmd_efi_lsroutes = grub_register_command ("net_ls_routes", grub_cmd_efi_listroutes,
 					"", N_("list network routes"));
-  cmd_efi_lscards = grub_register_command ("net_efi_ls_cards", grub_cmd_efi_listcards,
+  cmd_efi_lscards = grub_register_command ("net_ls_cards", grub_cmd_efi_listcards,
 				       "", N_("list network cards"));
-  cmd_efi_lsaddr = grub_register_command ("net_efi_ls_addr", grub_cmd_efi_listaddrs,
+  cmd_efi_lsaddr = grub_register_command ("net_ls_addr", grub_cmd_efi_listaddrs,
                                       "", N_("list network addresses"));
-  cmd_efi_addaddr = grub_register_command ("net_efi_add_addr", grub_cmd_efi_addaddr,
+  cmd_efi_addaddr = grub_register_command ("net_add_addr", grub_cmd_efi_addaddr,
                                         /* TRANSLATORS: HWADDRESS stands for
                                            "hardware address".  */
                                        N_("SHORTNAME CARD ADDRESS [HWADDRESS]"),

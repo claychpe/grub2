@@ -396,10 +396,10 @@ static grub_command_t cmd_efi_bootp6;
 
 void grub_efi_net_dhcp_init (void)
 {
-  cmd_efi_bootp = grub_register_command ("net_efi_bootp", grub_cmd_efi_bootp,
+  cmd_efi_bootp = grub_register_command ("net_bootp", grub_cmd_efi_bootp,
 				     N_("[CARD]"),
 				     N_("perform a bootp autoconfiguration"));
-  cmd_efi_bootp6 = grub_register_command ("net_efi_bootp6", grub_cmd_efi_bootp6,
+  cmd_efi_bootp6 = grub_register_command ("net_bootp6", grub_cmd_efi_bootp6,
 				     N_("[CARD]"),
 				     N_("perform a bootp autoconfiguration"));
 }

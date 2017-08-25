@@ -32,13 +32,13 @@
 
 static char *rootdir = NULL, *subdir = NULL;
 static char *debug_image = NULL;
-/* HACK : */
-static char pref_native = 1;
+static char efi_netfs = 0;
 
 enum
   {
     OPTION_NET_DIRECTORY = 0x301,
     OPTION_SUBDIR,
+    OPTION_EFI_NETFS,
     OPTION_DEBUG,
     OPTION_DEBUG_IMAGE
   };
@@ -49,6 +49,7 @@ static struct argp_option options[] = {
    0, N_("root directory of TFTP server"), 2},
   {"subdir", OPTION_SUBDIR, N_("DIR"),
    0, N_("relative subdirectory on network server"), 2},
+  {"efi-netfs", OPTION_EFI_NETFS, 0, 0, N_("use efi_netfs module for native UEFI protocols"), 2},
   {"debug", OPTION_DEBUG, 0, OPTION_HIDDEN, 0, 2},
   {"debug-image", OPTION_DEBUG_IMAGE, N_("STRING"), OPTION_HIDDEN, 0, 2},
   {0, 0, 0, 0, 0, 0}
@@ -69,6 +70,9 @@ argp_parser (int key, char *arg, struct argp_state *state)
       free (subdir);
       subdir = xstrdup (arg);
       return 0;
+    case OPTION_EFI_NETFS:
+      efi_netfs = 1;
+      return 0;
       /* This is an undocumented feature...  */
     case OPTION_DEBUG:
       verbosity++;
@@ -84,7 +88,6 @@ argp_parser (int key, char *arg, struct argp_state *state)
     }
 }
 
-
 struct argp argp = {
   options, argp_parser, NULL,
   "\v"N_("Prepares GRUB network boot images at net_directory/subdir "
@@ -94,7 +97,7 @@ struct argp argp = {
 
 static char *base;
 
-static const struct
+static struct
 {
   const char *mkimage_target;
   const char *netmodule;
@@ -153,9 +156,7 @@ process_input_dir (const char *input_dir, enum grub_install_plat platform)
   fprintf (cfg, "source %s/grub.cfg", subdir);
   fclose (cfg);
 
-  /* HACK : */
-  if (!pref_native)
-    grub_install_push_module (targets[platform].netmodule);
+  grub_install_push_module (targets[platform].netmodule);
 
   output = grub_util_path_concat_ext (2, grubdir, "core", targets[platform].ext);
 
@@ -195,14 +196,16 @@ main (int argc, char *argv[])
 
   grub_install_mkdir_p (base);
 
-  /* HACK : */
-  if (!pref_native)
+  if (!efi_netfs)
     {
       grub_install_push_module ("tftp");
       grub_install_push_module ("http");
     }
   else
-    grub_install_push_module ("efi_netfs");
+    {
+      targets[GRUB_INSTALL_PLATFORM_I386_EFI].netmodule = "efi_netfs";
+      targets[GRUB_INSTALL_PLATFORM_X86_64_EFI].netmodule = "efi_netfs";
+    }
 
   if (!grub_install_source_directory)
     {

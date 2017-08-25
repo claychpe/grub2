@@ -1581,7 +1581,7 @@ typedef struct grub_efi_pxe_mode
 typedef struct grub_efi_pxe
 {
   grub_uint64_t rev;
-  void (*start) (void);
+  grub_efi_status_t (*start) (struct grub_efi_pxe *this, grub_efi_boolean_t use_ipv6);
   void (*stop) (void);
   grub_efi_status_t (*dhcp) (struct grub_efi_pxe *this,
 			    grub_efi_boolean_t sort_offers);

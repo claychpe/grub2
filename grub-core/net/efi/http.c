@@ -131,7 +131,7 @@ grub_efihttp_open (struct grub_efi_net_device *dev,
     grub_size_t url_len, ucs2_url_len;
     const char *protocol = (type == 1) ? "https" : "http";
 
-    if (grub_efi_string_to_ip6_address (file->device->net->server, address, &rest) && *rest == 0)
+    if (grub_efi_string_to_ip6_address (file->device->net->server, &address, &rest) && *rest == 0)
       url = grub_xasprintf ("%s://[%s]%s", protocol, file->device->net->server, file->device->net->name);
     else
       url = grub_xasprintf ("%s://%s%s", protocol, file->device->net->server, file->device->net->name);

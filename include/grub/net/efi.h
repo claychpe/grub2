@@ -106,7 +106,7 @@ void grub_efi_net_dhcp_init (void);
 void grub_efi_net_dhcp_fini (void);
 
 char *
-grub_efi_ip4_address_to_string (grub_efi_ipv4_address_t address);
+grub_efi_ip4_address_to_string (grub_efi_ipv4_address_t *address);
 
 char *
 grub_efi_ip6_address_to_string (grub_efi_pxe_ipv6_address_t *address);
@@ -115,10 +115,10 @@ char *
 grub_efi_hw_address_to_string (grub_efi_uint32_t hw_address_size, grub_efi_mac_address_t hw_address);
 
 int
-grub_efi_string_to_ip4_address (const char *val, grub_efi_ipv4_address_t address, const char **rest);
+grub_efi_string_to_ip4_address (const char *val, grub_efi_ipv4_address_t *address, const char **rest);
 
 int
-grub_efi_string_to_ip6_address (const char *val, grub_efi_ipv6_address_t address, const char **rest);
+grub_efi_string_to_ip6_address (const char *val, grub_efi_ipv6_address_t *address, const char **rest);
 
 char *
 grub_efi_ip6_interface_name (struct grub_efi_net_device *dev);

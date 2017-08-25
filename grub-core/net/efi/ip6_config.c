@@ -57,7 +57,7 @@ grub_efi_ip6_address_to_string (grub_efi_pxe_ipv6_address_t *address)
 }
 
 int
-grub_efi_string_to_ip6_address (const char *val, grub_efi_ipv6_address_t address, const char **rest)
+grub_efi_string_to_ip6_address (const char *val, grub_efi_ipv6_address_t *address, const char **rest)
 {
   grub_uint16_t newip[8];
   const char *ptr = val;

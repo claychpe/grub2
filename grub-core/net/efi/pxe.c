@@ -278,8 +278,6 @@ pxe_open (struct grub_efi_net_device *dev,
   file->data = 0;
   file->device->net->offset = 0;
 
-  grub_printf ("file size %lu\n", file->size);
-
   return GRUB_ERR_NONE;
 }
 
@@ -312,7 +310,7 @@ pxe_read (struct grub_efi_net_device *dev,
   char *p;
   grub_efi_status_t status;
   grub_efi_pxe_t *pxe = (prefer_ip6) ? dev->ip6_pxe : dev->ip4_pxe;
-  grub_size_t bufsz = len;
+  grub_efi_uint64_t bufsz = len;
   grub_efi_pxe_ip_address_t server_ip;
   char *buf2 = NULL;
 
@@ -367,8 +365,6 @@ pxe_read (struct grub_efi_net_device *dev,
 
   if (status == GRUB_EFI_BUFFER_TOO_SMALL)
     {
-      /**/
-      grub_printf ("Buffer too small, requested %lu , required %lu, actual %lu\n", len, bufsz, file->size);
 
       buf2 = grub_malloc (bufsz);
 

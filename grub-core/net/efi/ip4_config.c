@@ -32,7 +32,7 @@ grub_efi_hw_address_to_string (grub_efi_uint32_t hw_address_size, grub_efi_mac_a
 }
 
 char *
-grub_efi_ip4_address_to_string (grub_efi_ipv4_address_t address)
+grub_efi_ip4_address_to_string (grub_efi_ipv4_address_t *address)
 {
   char *addr;
 
@@ -44,16 +44,16 @@ grub_efi_ip4_address_to_string (grub_efi_ipv4_address_t address)
   grub_snprintf (addr,
 	  sizeof ("XXX.XXX.XXX.XXX"),
 	  "%u.%u.%u.%u",
-	  address[0],
-	  address[1],
-	  address[2],
-	  address[3]);
+	  (*address)[0],
+	  (*address)[1],
+	  (*address)[2],
+	  (*address)[3]);
 
   return addr;
 }
 
 int
-grub_efi_string_to_ip4_address (const char *val, grub_efi_ipv4_address_t address, const char **rest)
+grub_efi_string_to_ip4_address (const char *val, grub_efi_ipv4_address_t *address, const char **rest)
 {
   grub_uint32_t newip = 0;
   int i;
@@ -85,7 +85,7 @@ grub_efi_string_to_ip4_address (const char *val, grub_efi_ipv4_address_t address
 
   newip =  grub_cpu_to_be32 (newip);
 
-  grub_memcpy (address, &newip, sizeof(address));
+  grub_memcpy (address, &newip, sizeof(*address));
 
   if (rest)
     *rest = (ptr - 1);
@@ -198,7 +198,7 @@ grub_efi_ip4_interface_address (struct grub_efi_net_device *dev)
   if (!manual_address)
     return NULL;
 
-  addr = grub_efi_ip4_address_to_string (manual_address->address);
+  addr = grub_efi_ip4_address_to_string (&manual_address->address);
   grub_free (manual_address);
   return addr;
 }
@@ -256,11 +256,11 @@ grub_efi_ip4_interface_route_table (struct grub_efi_net_device *dev)
 	  interface_name = inf->name;
 
       u32_gateway = grub_get_unaligned32 (&route_table->gateway_address);
-      gateway = grub_efi_ip4_address_to_string (route_table->gateway_address);
+      gateway = grub_efi_ip4_address_to_string (&route_table->gateway_address);
       u32_subnet = grub_get_unaligned32 (&route_table->subnet_address);
-      subnet = grub_efi_ip4_address_to_string (route_table->subnet_address);
+      subnet = grub_efi_ip4_address_to_string (&route_table->subnet_address);
       mask_size = address_mask_size (&route_table->subnet_mask);
-      mask = grub_efi_ip4_address_to_string (route_table->subnet_mask);
+      mask = grub_efi_ip4_address_to_string (&route_table->subnet_mask);
       if (u32_subnet && !u32_gateway && interface_name)
 	ret[id++] = grub_xasprintf ("%s:local %s/%d %s", dev->card_name, subnet, mask_size, interface_name);
       else if (u32_subnet && u32_gateway)

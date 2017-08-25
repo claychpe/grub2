@@ -720,7 +720,7 @@ grub_efi_net_parse_address (const char *address,
 {
   const char *rest;
 
-  if (grub_efi_string_to_ip4_address (address, ip4->address, &rest))
+  if (grub_efi_string_to_ip4_address (address, &ip4->address, &rest))
     {
       *is_ip6 = 0;
       if (*rest == '/')
@@ -749,7 +749,7 @@ grub_efi_net_parse_address (const char *address,
 	  return GRUB_ERR_NONE;
 	}
     }
-  else if (grub_efi_string_to_ip6_address (address, ip6->address, &rest))
+  else if (grub_efi_string_to_ip6_address (address, &ip6->address, &rest))
     {
       *is_ip6 = 1;
       if (*rest == '/')

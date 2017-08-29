@@ -169,6 +169,7 @@ grub_cmd_efi_bootp (struct grub_command *cmd __attribute__ ((unused)),
       grub_efi_ipv4_address_t *dns_address;
       grub_efi_net_ip_manual_address_t net_ip;
       grub_efi_net_interface_t *inf = NULL;
+      grub_efi_net_ip_address_t ip_addr;
 
       if (argc > 0 && grub_strcmp (netdev->card_name, args[0]) != 0)
 	continue;
@@ -238,7 +239,8 @@ grub_cmd_efi_bootp (struct grub_command *cmd __attribute__ ((unused)),
 	  efi_net_interface_set_address (inf, &net_ip, 1);
 	}
 
-      efi_net_interface_set_gateway (inf, (grub_efi_net_ip_address_t *)&mode.router_address);
+      grub_memcpy (ip_addr.ip4, mode.router_address, sizeof (ip_addr.ip4));
+      efi_net_interface_set_gateway (inf, &ip_addr);
 
       dns_address = grub_efi_dhcp4_parse_dns (netdev->dhcp4, mode.reply_packet);
       if (dns_address)

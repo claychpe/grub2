@@ -1306,11 +1306,12 @@ grub_net_open_real (const char *name __attribute__ ((unused)))
   ret->fs = &grub_efi_netfs;
   return ret;
 }
-
+#if 0
 static grub_command_t cmd_efi_lsaddr;
 static grub_command_t cmd_efi_lscards;
 static grub_command_t cmd_efi_lsroutes;
 static grub_command_t cmd_efi_addaddr;
+#endif
 
 static struct grub_fs grub_efi_netfs =
   {
@@ -1324,14 +1325,57 @@ static struct grub_fs grub_efi_netfs =
     .mtime = NULL,
   };
 
-GRUB_MOD_INIT(efi_netfs)
+int
+grub_efi_net_boot_from_https (void)
+{
+  grub_efi_loaded_image_t *image = NULL;
+  grub_efi_device_path_t *dp;
+
+  image = grub_efi_get_loaded_image (grub_efi_image_handle);
+  if (!image)
+    return 0;
+
+  dp = grub_efi_get_device_path (image->device_handle);
+
+  while (1)
+    {
+      grub_efi_uint8_t type = GRUB_EFI_DEVICE_PATH_TYPE (dp);
+      grub_efi_uint8_t subtype = GRUB_EFI_DEVICE_PATH_SUBTYPE (dp);
+      grub_efi_uint16_t len = GRUB_EFI_DEVICE_PATH_LENGTH (dp);
+
+      if ((type == GRUB_EFI_MESSAGING_DEVICE_PATH_TYPE)
+	  && (subtype == GRUB_EFI_URI_DEVICE_PATH_SUBTYPE))
+	{
+	  grub_efi_uri_device_path_t *uri_dp = (grub_efi_uri_device_path_t *) dp;
+	  return (grub_strncmp ((const char*)uri_dp->uri, "https://", sizeof ("https://") - 1) == 0) ? 1 : 0;
+	}
+
+      if (GRUB_EFI_END_ENTIRE_DEVICE_PATH (dp))
+        break;
+      dp = (grub_efi_device_path_t *) ((char *) dp + len);
+    }
+
+  return 0;
+}
+
+static char *
+grub_env_write_readonly (struct grub_env_var *var __attribute__ ((unused)),
+			 const char *val __attribute__ ((unused)))
+{
+  return NULL;
+}
+
+grub_command_func_t grub_efi_net_list_routes = grub_cmd_efi_listroutes;
+grub_command_func_t grub_efi_net_list_cards = grub_cmd_efi_listcards;
+grub_command_func_t grub_efi_net_list_addrs = grub_cmd_efi_listaddrs;
+grub_command_func_t grub_efi_net_add_addr = grub_cmd_efi_addaddr;
+
+int
+grub_efi_net_fs_init ()
 {
   grub_efi_net_find_cards ();
-  /* TODO: Check grub_efi_net_config is in used ?? */
   grub_efi_net_config = grub_efi_net_config_real;
-  /* TODO: Check grub_net_open is in used ?? */
   grub_net_open = grub_net_open_real;
-  /* FIXME: How to deak with conflits of used environment vars with grub's native net ??? */
   grub_register_variable_hook ("net_default_server", grub_efi_net_var_get_server,
 			       grub_efi_net_var_set_server);
   grub_env_export ("net_default_server");
@@ -1347,23 +1391,18 @@ GRUB_MOD_INIT(efi_netfs)
   grub_register_variable_hook ("net_default_mac", grub_efi_net_var_get_mac,
 			       0);
   grub_env_export ("net_default_mac");
-  /* TODO: use other type of grub_register_command ??? */
-  cmd_efi_lsroutes = grub_register_command ("net_efi_ls_routes", grub_cmd_efi_listroutes,
-					"", N_("list network routes"));
-  cmd_efi_lscards = grub_register_command ("net_efi_ls_cards", grub_cmd_efi_listcards,
-				       "", N_("list network cards"));
-  cmd_efi_lsaddr = grub_register_command ("net_efi_ls_addr", grub_cmd_efi_listaddrs,
-                                      "", N_("list network addresses"));
-  cmd_efi_addaddr = grub_register_command ("net_efi_add_addr", grub_cmd_efi_addaddr,
-                                        /* TRANSLATORS: HWADDRESS stands for
-                                           "hardware address".  */
-                                       N_("SHORTNAME CARD ADDRESS [HWADDRESS]"),
-                                       N_("Add a network address."));
-  grub_efi_net_dhcp_init ();
+
+  grub_env_set ("grub_netfs_type", "efi");
+  grub_register_variable_hook ("grub_netfs_type", 0, grub_env_write_readonly);
+  grub_env_export ("grub_netfs_type");
+
+  return 1;
 }
 
-GRUB_MOD_FINI(efi_netfs)
+void
+grub_efi_net_fs_fini (void)
 {
+  grub_env_unset ("grub_netfs_type");
   grub_efi_net_unset_interface_vars ();
   grub_register_variable_hook ("net_default_server", 0, 0);
   grub_env_unset ("net_default_server");
@@ -1375,9 +1414,7 @@ GRUB_MOD_FINI(efi_netfs)
   grub_env_unset ("net_default_ip");
   grub_register_variable_hook ("net_default_mac", 0, 0);
   grub_env_unset ("net_default_mac");
-  grub_efi_net_dhcp_fini ();
-  grub_unregister_command (cmd_efi_lsroutes);
-  grub_unregister_command (cmd_efi_lscards);
-  grub_unregister_command (cmd_efi_lsaddr);
+  grub_efi_net_config = NULL;
+  grub_net_open = NULL;
   grub_fs_unregister (&grub_efi_netfs);
 }

@@ -38,9 +38,9 @@ enum
   {
     OPTION_NET_DIRECTORY = 0x301,
     OPTION_SUBDIR,
-    OPTION_EFI_NETFS,
     OPTION_DEBUG,
-    OPTION_DEBUG_IMAGE
+    OPTION_DEBUG_IMAGE,
+    OPTION_DEBUG_EFI_NETFS
   };
 
 static struct argp_option options[] = {
@@ -49,9 +49,9 @@ static struct argp_option options[] = {
    0, N_("root directory of TFTP server"), 2},
   {"subdir", OPTION_SUBDIR, N_("DIR"),
    0, N_("relative subdirectory on network server"), 2},
-  {"efi-netfs", OPTION_EFI_NETFS, 0, 0, N_("use efi_netfs module for native UEFI protocols"), 2},
   {"debug", OPTION_DEBUG, 0, OPTION_HIDDEN, 0, 2},
   {"debug-image", OPTION_DEBUG_IMAGE, N_("STRING"), OPTION_HIDDEN, 0, 2},
+  {"debug-efi-netfs", OPTION_DEBUG_EFI_NETFS, 0, OPTION_HIDDEN, 0, 2},
   {0, 0, 0, 0, 0, 0}
 };
 
@@ -70,7 +70,7 @@ argp_parser (int key, char *arg, struct argp_state *state)
       free (subdir);
       subdir = xstrdup (arg);
       return 0;
-    case OPTION_EFI_NETFS:
+    case OPTION_DEBUG_EFI_NETFS:
       efi_netfs = 1;
       return 0;
       /* This is an undocumented feature...  */

@@ -24,6 +24,7 @@
 #include <grub/efi/efi.h>
 #include <grub/i18n.h>
 #include <grub/net/netbuff.h>
+#include <grub/env.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -816,6 +817,9 @@ grub_efi_net_config_real (grub_efi_handle_t hnd, char **device,
 
 GRUB_MOD_INIT(efinet)
 {
+  if (grub_efi_net_config)
+    return;
+
   grub_efinet_findcards ();
   grub_efi_net_config = grub_efi_net_config_real;
 }
@@ -827,5 +831,7 @@ GRUB_MOD_FINI(efinet)
   FOR_NET_CARDS_SAFE (card, next) 
     if (card->driver == &efidriver)
       grub_net_card_unregister (card);
+
+  grub_efi_net_config = NULL;
 }
 

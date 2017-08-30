@@ -4,6 +4,7 @@
 #include <grub/efi/api.h>
 #include <grub/efi/http.h>
 #include <grub/efi/dhcp.h>
+#include <grub/command.h>
 
 typedef struct grub_efi_net_interface grub_efi_net_interface_t;
 typedef struct grub_efi_net_ip_config grub_efi_net_ip_config_t;
@@ -95,15 +96,11 @@ struct grub_efi_net_io
 
 extern struct grub_efi_net_device *net_devices;
 
-/* FIXME: Use pointers to structure to save up space */
 extern struct grub_efi_net_io io_http;
 extern struct grub_efi_net_io io_pxe;
 
 extern grub_efi_net_ip_config_t *efi_net_ip4_config;
 extern grub_efi_net_ip_config_t *efi_net_ip6_config;
-
-void grub_efi_net_dhcp_init (void);
-void grub_efi_net_dhcp_fini (void);
 
 char *
 grub_efi_ip4_address_to_string (grub_efi_ipv4_address_t *address);
@@ -131,5 +128,16 @@ grub_efi_net_create_interface (struct grub_efi_net_device *dev,
 		const char *interface_name,
 		grub_efi_net_ip_manual_address_t *net_ip,
 		int has_subnet);
+
+int grub_efi_net_fs_init (void);
+void grub_efi_net_fs_fini (void);
+int grub_efi_net_boot_from_https (void);
+
+extern grub_command_func_t grub_efi_net_list_routes;
+extern grub_command_func_t grub_efi_net_list_cards;
+extern grub_command_func_t grub_efi_net_list_addrs;
+extern grub_command_func_t grub_efi_net_add_addr;
+extern grub_command_func_t grub_efi_net_bootp;
+extern grub_command_func_t grub_efi_net_bootp6;
 
 #endif /* ! GRUB_NET_EFI_HEADER */

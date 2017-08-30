@@ -168,8 +168,8 @@ grub_cmd_efi_bootp (struct grub_command *cmd __attribute__ ((unused)),
       grub_efi_dhcp4_packet_option_t *options;
       grub_efi_ipv4_address_t *dns_address;
       grub_efi_net_ip_manual_address_t net_ip;
-      grub_efi_net_interface_t *inf = NULL;
       grub_efi_net_ip_address_t ip_addr;
+      grub_efi_net_interface_t *inf = NULL;
 
       if (argc > 0 && grub_strcmp (netdev->card_name, args[0]) != 0)
 	continue;
@@ -393,21 +393,5 @@ grub_cmd_efi_bootp6 (struct grub_command *cmd __attribute__ ((unused)),
   return GRUB_ERR_NONE;
 }
 
-static grub_command_t cmd_efi_bootp;
-static grub_command_t cmd_efi_bootp6;
-
-void grub_efi_net_dhcp_init (void)
-{
-  cmd_efi_bootp = grub_register_command ("net_efi_bootp", grub_cmd_efi_bootp,
-				     N_("[CARD]"),
-				     N_("perform a bootp autoconfiguration"));
-  cmd_efi_bootp6 = grub_register_command ("net_efi_bootp6", grub_cmd_efi_bootp6,
-				     N_("[CARD]"),
-				     N_("perform a bootp autoconfiguration"));
-}
-void grub_efi_net_dhcp_fini (void)
-{
-  grub_unregister_command (cmd_efi_bootp);
-  grub_unregister_command (cmd_efi_bootp6);
-}
-
+grub_command_func_t grub_efi_net_bootp = grub_cmd_efi_bootp;
+grub_command_func_t grub_efi_net_bootp6 = grub_cmd_efi_bootp6;

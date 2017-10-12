@@ -100,6 +100,17 @@ grub_efi_http_response_callback (grub_efi_event_t event __attribute__ ((unused))
   response_callback_done = 1;
 }
 
+struct grub_efi_http_data
+{
+  grub_efi_http_request_data_t request_data;
+  grub_efi_http_message_t request_message;
+  grub_efi_http_token_t request_token;
+  grub_efi_http_response_data_t response_data;
+  grub_efi_http_message_t response_message;
+  grub_efi_http_token_t response_token;
+  grub_efi_http_header_t request_headers[3];
+};
+
 static grub_err_t
 grub_efihttp_open (struct grub_efi_net_device *dev,
 		  int prefer_ip6 __attribute__ ((unused)),
@@ -108,21 +119,21 @@ grub_efihttp_open (struct grub_efi_net_device *dev,
 		  int type)
 {
   grub_efi_status_t status;
-  grub_efi_http_request_data_t request_data = {0};
-  grub_efi_http_message_t request_message = {{0}, 0, 0, 0, 0};
-  grub_efi_http_token_t request_token = {0};
-  grub_efi_http_response_data_t response_data = {0};
-  grub_efi_http_message_t response_message = {{0}, 0, 0, 0, 0};
-  grub_efi_http_token_t response_token = {0};
   grub_uint32_t length, i;
   grub_efi_boot_services_t *b = grub_efi_system_table->boot_services;
   grub_efi_http_t *http = dev->http;
   char *url = NULL;
-  grub_efi_http_header_t request_headers[3] = {
-    {(grub_efi_char8_t *)"Host", (grub_efi_char8_t *)file->device->net->server},
-    {(grub_efi_char8_t *)"Accept", (grub_efi_char8_t *)"*/*"},
-    {(grub_efi_char8_t *)"User-Agent", (grub_efi_char8_t *)"UefiHttpBoot/1.0"}
-  };
+
+  struct grub_efi_http_data *data = grub_malloc (sizeof (*data));
+
+  grub_memset (data, 0, sizeof (*data));
+
+  data->request_headers[0].field_name = (grub_efi_char8_t *)"Host";
+  data->request_headers[0].field_value = (grub_efi_char8_t *)file->device->net->server;
+  data->request_headers[1].field_name = (grub_efi_char8_t *)"Accept";
+  data->request_headers[1].field_value = (grub_efi_char8_t *)"*/*";
+  data->request_headers[2].field_name = (grub_efi_char8_t *)"User-Agent";
+  data->request_headers[2].field_value = (grub_efi_char8_t *)"UefiHttpBoot/1.0";
 
   {
     grub_efi_ipv6_address_t address;
@@ -152,21 +163,21 @@ grub_efihttp_open (struct grub_efi_net_device *dev,
     ucs2_url_len = grub_utf8_to_utf16 (ucs2_url, ucs2_url_len, (grub_uint8_t *)url, url_len, NULL); /* convert string format from ascii to usc2 */
     ucs2_url[ucs2_url_len] = 0;
     grub_free (url);
-    request_data.url = ucs2_url;
+    data->request_data.url = ucs2_url;
   }
 
-  request_data.method = GRUB_EFI_HTTPMETHODGET;
+  data->request_data.method = GRUB_EFI_HTTPMETHODGET;
 
-  request_message.data.request = &request_data;
-  request_message.header_count = 3;
-  request_message.headers = request_headers;
-  request_message.body_length = 0;
-  request_message.body = NULL;
+  data->request_message.data.request = &data->request_data;
+  data->request_message.header_count = 3;
+  data->request_message.headers = data->request_headers;
+  data->request_message.body_length = 0;
+  data->request_message.body = NULL;
 
   /* request token */
-  request_token.event = NULL;
-  request_token.status = GRUB_EFI_NOT_READY;
-  request_token.message = &request_message;
+  data->request_token.event = NULL;
+  data->request_token.status = GRUB_EFI_NOT_READY;
+  data->request_token.message = &data->request_message;
 
   request_callback_done = 0;
   status = efi_call_5 (b->create_event,
@@ -174,63 +185,63 @@ grub_efihttp_open (struct grub_efi_net_device *dev,
                        GRUB_EFI_TPL_CALLBACK,
                        grub_efi_http_request_callback,
                        NULL,
-                       &request_token.event);
+                       &data->request_token.event);
 
   if (status != GRUB_EFI_SUCCESS)
     {
-      grub_free (request_data.url);
+      grub_free (data->request_data.url);
       return grub_error (GRUB_ERR_IO, "Fail to create an event! status=0x%x\n", status);
     }
 
-  status = efi_call_2 (http->request, http, &request_token);
+  status = efi_call_2 (http->request, http, &data->request_token);
 
   if (status != GRUB_EFI_SUCCESS)
     {
-      efi_call_1 (b->close_event, request_token.event);
-      grub_free (request_data.url);
+      efi_call_1 (b->close_event, data->request_token.event);
+      grub_free (data->request_data.url);
       return grub_error (GRUB_ERR_IO, "Fail to send a request! status=0x%x\n", status);
     }
   /* TODO: Add Timeout */
   while (!request_callback_done)
     efi_call_1(http->poll, http);
 
-  response_data.status_code = GRUB_EFI_HTTP_STATUS_UNSUPPORTED_STATUS;
-  response_message.data.response = &response_data;
+  data->response_data.status_code = GRUB_EFI_HTTP_STATUS_UNSUPPORTED_STATUS;
+  data->response_message.data.response = &data->response_data;
   /* herader_count will be updated by the HTTP driver on response */
-  response_message.header_count = 0;
+  data->response_message.header_count = 0;
   /* headers will be populated by the driver on response */
-  response_message.headers = NULL;
+  data->response_message.headers = NULL;
   /* use zero BodyLength to only receive the response headers */
-  response_message.body_length = 0;
-  response_message.body = NULL;
-  response_token.event = NULL;
+  data->response_message.body_length = 0;
+  data->response_message.body = NULL;
+  data->response_token.event = NULL;
 
   status = efi_call_5 (b->create_event,
               GRUB_EFI_EVT_NOTIFY_SIGNAL,
               GRUB_EFI_TPL_CALLBACK,
               grub_efi_http_response_callback,
               NULL,
-              &response_token.event);
+              &data->response_token.event);
 
   if (status != GRUB_EFI_SUCCESS)
     {
-      efi_call_1 (b->close_event, request_token.event);
-      grub_free (request_data.url);
+      efi_call_1 (b->close_event, data->request_token.event);
+      grub_free (data->request_data.url);
       return grub_error (GRUB_ERR_IO, "Fail to create an event! status=0x%x\n", status);
     }
 
-  response_token.status = GRUB_EFI_SUCCESS;
-  response_token.message = &response_message;
+  data->response_token.status = GRUB_EFI_SUCCESS;
+  data->response_token.message = &data->response_message;
 
   /* wait for HTTP response */
   response_callback_done = 0;
-  status = efi_call_2 (http->response, http, &response_token);
+  status = efi_call_2 (http->response, http, &data->response_token);
 
   if (status != GRUB_EFI_SUCCESS)
     {
-      efi_call_1 (b->close_event, response_token.event);
-      efi_call_1 (b->close_event, request_token.event);
-      grub_free (request_data.url);
+      efi_call_1 (b->close_event, data->response_token.event);
+      efi_call_1 (b->close_event, data->request_token.event);
+      grub_free (data->request_data.url);
       return grub_error (GRUB_ERR_IO, "Fail to receive a response! status=%d\n", (int)status);
     }
 
@@ -240,50 +251,47 @@ grub_efihttp_open (struct grub_efi_net_device *dev,
 
   /* check the HTTP status code */
   /* parse the length of the file from the ContentLength header */
-  for (length = 0, i = 0; i < response_message.header_count; ++i)
+  for (length = 0, i = 0; i < data->response_message.header_count; ++i)
     {
-      if (!grub_strcmp((const char*)response_message.headers[i].field_name, "Content-Length"))
+      if (!grub_strcmp((const char*)data->response_message.headers[i].field_name, "Content-Length"))
 	{
-	  length = grub_strtoul((const char*)response_message.headers[i].field_value, 0, 10);
+	  length = grub_strtoul((const char*)data->response_message.headers[i].field_value, 0, 10);
 	  break;
 	}
     }
 
   file->size = (grub_off_t)length;
   file->not_easily_seekable = 0;
-  file->data = 0;
+  file->data = data;
   file->device->net->offset = 0;
 
   /* release */
   /* On response, this array is allocated and
     populated by the HTTP driver. It is the responsibility of the caller
     to free this memory on both request and response. */
-  if (response_message.headers)
-    efi_call_1 (b->free_pool, response_message.headers);
+  if (data->response_message.headers)
+    efi_call_1 (b->free_pool, data->response_message.headers);
 
-  efi_call_1 (b->close_event, response_token.event);
-  efi_call_1 (b->close_event, request_token.event);
-  grub_free (request_data.url);
+  efi_call_1 (b->close_event, data->response_token.event);
+  efi_call_1 (b->close_event, data->request_token.event);
+  grub_free (data->request_data.url);
 
   return GRUB_ERR_NONE;
 }
 
 static grub_err_t
-grub_efihttp_close (struct grub_efi_net_device *dev,
+grub_efihttp_close (struct grub_efi_net_device *dev __attribute__ ((unused)),
 		    int prefer_ip6 __attribute__ ((unused)),
 		    grub_file_t file)
 {
-  grub_efi_status_t status;
-  grub_efi_http_t *http = dev->http;
+  struct grub_efi_http_data *data = file->data;
 
-  return GRUB_ERR_NONE;
-  status = efi_call_2 (http->cancel, http, NULL);
-  if (status != GRUB_EFI_SUCCESS)
-    return grub_error (GRUB_ERR_IO, "Error! status=%d\n", (int)status);
+  if (data)
+    grub_free (data);
 
+  file->data = 0;
   file->offset = 0;
   file->device->net->offset = 0;
-
   return GRUB_ERR_NONE;
 }
 
@@ -294,39 +302,37 @@ grub_efihttp_read (struct grub_efi_net_device *dev,
 		  char *buf,
 		  grub_size_t len)
 {
-  grub_efi_http_token_t response_token;
   grub_efi_status_t status;
   grub_size_t sum = 0;
   grub_efi_boot_services_t *b = grub_efi_system_table->boot_services;
   grub_efi_http_t *http = dev->http;
+  struct grub_efi_http_data *data = file->data;
 
-  response_token.event = NULL;
+  grub_memset (data, 0, sizeof (*data));
   efi_call_5 (b->create_event,
               GRUB_EFI_EVT_NOTIFY_SIGNAL,
               GRUB_EFI_TPL_CALLBACK,
               grub_efi_http_response_callback,
               NULL,
-              &response_token.event);
+              &data->response_token.event);
 
   while (len)
     {
-      grub_efi_http_message_t response_message;
+      data->response_message.data.response = NULL;
+      data->response_message.header_count = 0;
+      data->response_message.headers = NULL;
+      data->response_message.body_length = len;
+      data->response_message.body = buf;
 
-      response_message.data.response = NULL;
-      response_message.header_count = 0;
-      response_message.headers = NULL;
-      response_message.body_length = len;
-      response_message.body = buf;
-
-      response_token.message = &response_message;
-      response_token.status = GRUB_EFI_NOT_READY;
+      data->response_token.message = &data->response_message;
+      data->response_token.status = GRUB_EFI_NOT_READY;
 
       response_callback_done = 0;
 
-      status = efi_call_2 (http->response, http, &response_token);
+      status = efi_call_2 (http->response, http, &data->response_token);
       if (status != GRUB_EFI_SUCCESS)
 	{
-	  efi_call_1 (b->close_event, response_token.event);
+	  efi_call_1 (b->close_event, data->response_token.event);
 	  grub_error (GRUB_ERR_IO, "Error! status=%d\n", (int)status);
 	  return -1;
 	}
@@ -334,13 +340,13 @@ grub_efihttp_read (struct grub_efi_net_device *dev,
       while (!response_callback_done)
 	efi_call_1(http->poll, http);
 
-      file->device->net->offset += response_message.body_length;
-      sum += response_message.body_length;
-      buf += response_message.body_length;
-      len -= response_message.body_length;
+      file->device->net->offset += data->response_message.body_length;
+      sum += data->response_message.body_length;
+      buf += data->response_message.body_length;
+      len -= data->response_message.body_length;
     }
 
-  efi_call_1 (b->close_event, response_token.event);
+  efi_call_1 (b->close_event, data->response_token.event);
 
   return sum;
 }
